@@ -1,10 +1,14 @@
 import streamlit as st
 
+import streamlit.components.v1 as components
+
 import pymupdf
 
 import re
 
 import html
+
+import json
 
 st.set_page_config(
 
@@ -16,17 +20,7 @@ st.set_page_config(
 
 )
 
-st.title("📖 Bionic Speed Reader")
-
 def bionic_word(word):
-
-    """
-
-    Bold the first ~40% of alphabetic characters.
-
-    Keeps punctuation outside the bold section.
-
-    """
 
     match = re.match(r"^([^A-Za-z]*)([A-Za-z]+)(.*)$", word)
 
@@ -90,6 +84,8 @@ def create_chunks(words, chunk_size):
 
     ]
 
+st.title("📖 Bionic Speed Reader")
+
 uploaded_file = st.file_uploader(
 
     "Upload your textbook PDF",
@@ -106,97 +102,402 @@ if uploaded_file:
 
     words = text.split()
 
-    st.success(f"Loaded {len(words):,} words.")
+    st.success(f"Loaded {len(words):,} words")
 
-    chunk_size = st.slider(
+    col1, col2 = st.columns(2)
 
-        "Words per chunk",
+    with col1:
 
-        min_value=1,
+        chunk_size = st.slider(
 
-        max_value=8,
+            "Words per subtitle",
 
-        value=4
+            2,
 
-    )
+            8,
 
-    wpm = st.slider(
-
-        "Reading speed (WPM)",
-
-        min_value=100,
-
-        max_value=1500,
-
-        value=500,
-
-        step=50
-
-    )
-
-    chunks = create_chunks(words, chunk_size)
-
-    st.write(f"Total chunks: {len(chunks):,}")
-
-    if chunks:
-
-        chunk_number = st.number_input(
-
-            "Preview chunk",
-
-            min_value=1,
-
-            max_value=len(chunks),
-
-            value=1
+            4
 
         )
 
-        current_chunk = chunks[chunk_number - 1]
+    with col2:
+
+        wpm = st.slider(
+
+            "Reading speed",
+
+            100,
+
+            1500,
+
+            500,
+
+            50
+
+        )
+
+    chunks = create_chunks(words, chunk_size)
+
+    formatted_chunks = []
+
+    for chunk in chunks:
 
         formatted = " ".join(
 
             bionic_word(word)
 
-            for word in current_chunk
+            for word in chunk
 
         )
 
-        st.markdown(
+        formatted_chunks.append(formatted)
 
-            f"""
+    chunks_json = json.dumps(formatted_chunks)
 
-            <div style="
+    reader_html = f"""
 
-                min-height: 300px;
+<!DOCTYPE html>
 
-                display: flex;
+<html>
 
-                align-items: center;
+<head>
 
-                justify-content: center;
+<meta name="viewport"
 
-                text-align: center;
+content="width=device-width, initial-scale=1.0">
 
-                font-size: 42px;
+<style>
 
-                line-height: 1.4;
+body {{
 
-                padding: 30px;
+    margin: 0;
 
-            ">
+    background: #111111;
 
-                {formatted}
+    color: white;
 
-            </div>
+    font-family: Arial, sans-serif;
 
-            """,
+}}
 
-            unsafe_allow_html=True
+.reader {{
 
-        )
+    width: 100%;
 
-        st.info(
+    text-align: center;
 
-            f"Chunk {chunk_number} of {len(chunks)}"
-        )
+}}
+
+.screen {{
+
+    height: 300px;
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content: center;
+
+    padding: 20px;
+
+    box-sizing: border-box;
+
+}}
+
+#text {{
+
+    font-size: 38px;
+
+    line-height: 1.4;
+
+    max-width: 800px;
+
+}}
+
+strong {{
+
+    font-weight: 900;
+
+}}
+
+.controls {{
+
+    display: flex;
+
+    justify-content: center;
+
+    gap: 8px;
+
+    flex-wrap: wrap;
+
+    margin-top: 10px;
+
+}}
+
+button {{
+
+    border: none;
+
+    border-radius: 10px;
+
+    padding: 12px 18px;
+
+    font-size: 16px;
+
+    background: #333333;
+
+    color: white;
+
+}}
+
+button:active {{
+
+    transform: scale(0.96);
+
+}}
+
+.info {{
+
+    margin-top: 15px;
+
+    font-size: 14px;
+
+    color: #bbbbbb;
+
+}}
+
+input {{
+
+    width: 90%;
+
+}}
+
+</style>
+
+</head>
+
+<body>
+
+<div class="reader">
+
+<div class="screen">
+
+<div id="text">
+
+Press PLAY
+
+</div>
+
+</div>
+
+<div class="controls">
+
+<button onclick="previousChunk()">◀</button>
+
+<button onclick="togglePlay()" id="playButton">
+
+▶ PLAY
+
+</button>
+
+<button onclick="nextChunk()">▶</button>
+
+</div>
+
+<div class="controls">
+
+<label>
+
+Speed:
+
+<select id="speed">
+
+<option value="300">300 WPM</option>
+
+<option value="400">400 WPM</option>
+
+<option value="500" selected>500 WPM</option>
+
+<option value="600">600 WPM</option>
+
+<option value="800">800 WPM</option>
+
+<option value="1000">1000 WPM</option>
+
+</select>
+
+</label>
+
+</div>
+
+<div class="info">
+
+<div id="progress">
+
+0 / {len(formatted_chunks)}
+
+</div>
+
+</div>
+
+</div>
+
+<script>
+
+const chunks = {chunks_json};
+
+let current = 0;
+
+let playing = false;
+
+let timer = null;
+
+function showChunk() {{
+
+    if (chunks.length === 0) return;
+
+    document.getElementById("text").innerHTML =
+
+        chunks[current];
+
+    document.getElementById("progress").innerText =
+
+        (current + 1) + " / " + chunks.length;
+
+}}
+
+function getDelay() {{
+
+    const wpm =
+
+        Number(document.getElementById("speed").value);
+
+    const words =
+
+        chunks[current]
+
+        .replace(/<[^>]*>/g, "")
+
+        .trim()
+
+        .split(/\\s+/)
+
+        .length;
+
+    return (words / wpm) * 60000;
+
+}}
+
+function playNext() {{
+
+    if (!playing) return;
+
+    showChunk();
+
+    timer = setTimeout(() => {{
+
+        if (current < chunks.length - 1) {{
+
+            current++;
+
+            playNext();
+
+        }} else {{
+
+            playing = false;
+
+            document.getElementById("playButton")
+
+                .innerText = "▶ PLAY";
+
+        }}
+
+    }}, getDelay());
+
+}}
+
+function togglePlay() {{
+
+    if (playing) {{
+
+        playing = false;
+
+        clearTimeout(timer);
+
+        document.getElementById("playButton")
+
+            .innerText = "▶ PLAY";
+
+    }} else {{
+
+        playing = true;
+
+        document.getElementById("playButton")
+
+            .innerText = "⏸ PAUSE";
+
+        playNext();
+
+    }}
+
+}}
+
+function nextChunk() {{
+
+    clearTimeout(timer);
+
+    if (current < chunks.length - 1)
+
+        current++;
+
+    showChunk();
+
+}}
+
+function previousChunk() {{
+
+    clearTimeout(timer);
+
+    if (current > 0)
+
+        current--;
+
+    showChunk();
+
+}}
+
+document
+
+    .getElementById("speed")
+
+    .addEventListener("change", function() {{
+
+        if (playing) {{
+
+            clearTimeout(timer);
+
+            playNext();
+
+        }}
+
+    }});
+
+showChunk();
+
+</script>
+
+</body>
+
+</html>
+
+"""
+
+    components.html(
+
+        reader_html,
+
+        height=500,
+
+        scrolling=False
+
+    )
