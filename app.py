@@ -20,9 +20,29 @@ st.set_page_config(
 
 )
 
+# ---------------------------------------------------------
+
+# BIONIC FORMATTING
+
+# ---------------------------------------------------------
+
 def bionic_word(word):
 
-    match = re.match(r"^([^A-Za-z]*)([A-Za-z]+)(.*)$", word)
+    """
+
+    Highlights the beginning of each word using colour
+
+    instead of bold.
+
+    """
+
+    match = re.match(
+
+        r"^([^A-Za-z]*)([A-Za-z]+)(.*)$",
+
+        word
+
+    )
 
     if not match:
 
@@ -30,61 +50,159 @@ def bionic_word(word):
 
     prefix, letters, suffix = match.groups()
 
+    # Percentage of word emphasized
+
     n = max(1, round(len(letters) * 0.4))
 
-    bold_part = letters[:n]
+    emphasized = letters[:n]
 
-    normal_part = letters[n:]
+    normal = letters[n:]
 
     return (
 
         html.escape(prefix)
 
-        + "<strong>"
+        + '<span class="bionic">'
 
-        + html.escape(bold_part)
+        + html.escape(emphasized)
 
-        + "</strong>"
+        + '</span>'
 
-        + html.escape(normal_part + suffix)
+        + html.escape(normal + suffix)
 
     )
 
-def extract_pdf_text(uploaded_file):
+# ---------------------------------------------------------
+
+# PDF EXTRACTION
+
+# ---------------------------------------------------------
+
+def extract_pdf_pages(uploaded_file):
 
     data = uploaded_file.read()
 
-    with pymupdf.open(stream=data, filetype="pdf") as doc:
+    document = pymupdf.open(
 
-        pages = []
+        stream=data,
 
-        for page in doc:
+        filetype="pdf"
 
-            pages.append(page.get_text())
+    )
 
-    return "\n".join(pages)
+    pages = []
 
-def clean_text(text):
+    for page in document:
 
-    text = re.sub(r"-\n", "", text)
+        text = page.get_text()
 
-    text = re.sub(r"\n+", " ", text)
+        # Remove broken hyphenation
 
-    text = re.sub(r"\s+", " ", text)
+        text = re.sub(
 
-    return text.strip()
+            r"-\n",
 
-def create_chunks(words, chunk_size):
+            "",
 
-    return [
+            text
 
-        words[i:i + chunk_size]
+        )
 
-        for i in range(0, len(words), chunk_size)
+        # Replace line breaks with spaces
 
-    ]
+        text = re.sub(
 
-st.title("📖 Bionic Speed Reader")
+            r"\n+",
+
+            " ",
+
+            text
+
+        )
+
+        # Remove repeated whitespace
+
+        text = re.sub(
+
+            r"\s+",
+
+            " ",
+
+            text
+
+        )
+
+        text = text.strip()
+
+        pages.append(text)
+
+    document.close()
+
+    return pages
+
+# ---------------------------------------------------------
+
+# CREATE WORD CHUNKS
+
+# ---------------------------------------------------------
+
+def create_chunks(words, chunk_size=4):
+
+    chunks = []
+
+    for i in range(
+
+        0,
+
+        len(words),
+
+        chunk_size
+
+    ):
+
+        chunks.append(
+
+            words[i:i + chunk_size]
+
+        )
+
+    return chunks
+
+# ---------------------------------------------------------
+
+# APP TITLE
+
+# ---------------------------------------------------------
+
+st.markdown(
+
+    """
+
+    <h1 style="
+
+        text-align:center;
+
+        color:#222222;
+
+        margin-bottom:5px;
+
+    ">
+
+    📖 Bionic Speed Reader
+
+    </h1>
+
+    """,
+
+    unsafe_allow_html=True
+
+)
+
+# ---------------------------------------------------------
+
+# PDF UPLOAD
+
+# ---------------------------------------------------------
 
 uploaded_file = st.file_uploader(
 
@@ -96,65 +214,205 @@ uploaded_file = st.file_uploader(
 
 if uploaded_file:
 
-    text = extract_pdf_text(uploaded_file)
+    pages = extract_pdf_pages(
 
-    text = clean_text(text)
+        uploaded_file
 
-    words = text.split()
+    )
 
-    st.success(f"Loaded {len(words):,} words")
+    total_pages = len(pages)
+
+    # -----------------------------------------------------
+
+    # PAGE SELECTION
+
+    # -----------------------------------------------------
+
+    st.markdown(
+
+        "<h4 style='color:#333333;'>Start from page</h4>",
+
+        unsafe_allow_html=True
+
+    )
+
+    selected_page = st.number_input(
+
+        f"Page number (1 - {total_pages})",
+
+        min_value=1,
+
+        max_value=total_pages,
+
+        value=1,
+
+        step=1
+
+    )
+
+    # -----------------------------------------------------
+
+    # READING SETTINGS
+
+    # -----------------------------------------------------
 
     col1, col2 = st.columns(2)
 
     with col1:
 
-        chunk_size = st.slider(
+        wpm = st.select_slider(
 
-            "Words per subtitle",
+            "Reading speed",
 
-            2,
+            options=[
 
-            8,
+                200,
 
-            4
+                300,
+
+                400,
+
+                500,
+
+                600,
+
+                700,
+
+                800,
+
+                1000,
+
+                1200
+
+            ],
+
+            value=500
 
         )
 
     with col2:
 
-        wpm = st.slider(
+        chunk_size = st.select_slider(
 
-            "Reading speed",
+            "Words on screen",
 
-            100,
+            options=[
 
-            1500,
+                2,
 
-            500,
+                3,
 
-            50
+                4
+
+            ],
+
+            value=3
 
         )
 
-    chunks = create_chunks(words, chunk_size)
+    # -----------------------------------------------------
+
+    # COLLECT TEXT FROM SELECTED PAGE ONWARD
+
+    # -----------------------------------------------------
+
+    all_chunks = []
+
+    chunk_page_numbers = []
+
+    for page_number in range(
+
+        selected_page - 1,
+
+        total_pages
+
+    ):
+
+        page_text = pages[page_number]
+
+        if not page_text:
+
+            continue
+
+        words = page_text.split()
+
+        page_chunks = create_chunks(
+
+            words,
+
+            chunk_size
+
+        )
+
+        for chunk in page_chunks:
+
+            all_chunks.append(
+
+                " ".join(chunk)
+
+            )
+
+            chunk_page_numbers.append(
+
+                page_number + 1
+
+            )
+
+    # -----------------------------------------------------
+
+    # BIONIC HTML
+
+    # -----------------------------------------------------
 
     formatted_chunks = []
 
-    for chunk in chunks:
+    for chunk in all_chunks:
+
+        words = chunk.split()
 
         formatted = " ".join(
 
             bionic_word(word)
 
-            for word in chunk
+            for word in words
 
         )
 
-        formatted_chunks.append(formatted)
+        formatted_chunks.append(
 
-    chunks_json = json.dumps(formatted_chunks)
+            formatted
 
-    reader_html = f"""
+        )
+
+    if not formatted_chunks:
+
+        st.error(
+
+            "No readable text was found on this page."
+
+        )
+
+    else:
+
+        chunks_json = json.dumps(
+
+            formatted_chunks
+
+        )
+
+        page_numbers_json = json.dumps(
+
+            chunk_page_numbers
+
+        )
+
+        # -------------------------------------------------
+
+        # READER
+
+        # -------------------------------------------------
+
+        reader_html = f"""
 
 <!DOCTYPE html>
 
@@ -162,21 +420,35 @@ if uploaded_file:
 
 <head>
 
-<meta name="viewport"
+<meta
 
-content="width=device-width, initial-scale=1.0">
+name="viewport"
+
+content="width=device-width, initial-scale=1.0"
+
+>
 
 <style>
+
+html,
 
 body {{
 
     margin: 0;
 
-    background: #111111;
+    padding: 0;
 
-    color: white;
+    background: #ffffff;
 
-    font-family: Arial, sans-serif;
+    font-family:
+
+        -apple-system,
+
+        BlinkMacSystemFont,
+
+        "Segoe UI",
+
+        sans-serif;
 
 }}
 
@@ -184,13 +456,15 @@ body {{
 
     width: 100%;
 
-    text-align: center;
+    background: #ffffff;
+
+    color: #222222;
 
 }}
 
 .screen {{
 
-    height: 300px;
+    height: 330px;
 
     display: flex;
 
@@ -198,7 +472,9 @@ body {{
 
     justify-content: center;
 
-    padding: 20px;
+    text-align: center;
+
+    padding: 25px;
 
     box-sizing: border-box;
 
@@ -206,17 +482,27 @@ body {{
 
 #text {{
 
-    font-size: 38px;
+    font-size: 58px;
 
-    line-height: 1.4;
+    font-weight: 400;
 
-    max-width: 800px;
+    line-height: 1.25;
+
+    letter-spacing: -0.5px;
+
+    max-width: 950px;
+
+    color: #222222;
+
+    word-wrap: break-word;
 
 }}
 
-strong {{
+.bionic {{
 
-    font-weight: 900;
+    color: #1677ff;
+
+    font-weight: 500;
 
 }}
 
@@ -226,7 +512,9 @@ strong {{
 
     justify-content: center;
 
-    gap: 8px;
+    align-items: center;
+
+    gap: 10px;
 
     flex-wrap: wrap;
 
@@ -236,39 +524,95 @@ strong {{
 
 button {{
 
-    border: none;
+    border: 1px solid #dddddd;
 
-    border-radius: 10px;
+    border-radius: 12px;
 
     padding: 12px 18px;
 
     font-size: 16px;
 
-    background: #333333;
+    background: #f5f5f5;
 
-    color: white;
+    color: #222222;
 
 }}
 
 button:active {{
 
-    transform: scale(0.96);
+    background: #e8e8e8;
+
+    transform: scale(0.97);
+
+}}
+
+#playButton {{
+
+    min-width: 105px;
 
 }}
 
 .info {{
 
+    text-align: center;
+
     margin-top: 15px;
 
-    font-size: 14px;
+    font-size: 15px;
 
-    color: #bbbbbb;
+    color: #666666;
 
 }}
 
-input {{
+.progress-container {{
 
     width: 90%;
+
+    height: 6px;
+
+    background: #eeeeee;
+
+    border-radius: 10px;
+
+    margin: 15px auto;
+
+    overflow: hidden;
+
+}}
+
+#progressBar {{
+
+    height: 100%;
+
+    width: 0%;
+
+    background: #1677ff;
+
+    transition: width 0.1s linear;
+
+}}
+
+.speed-control {{
+
+    text-align: center;
+
+    margin-top: 10px;
+
+    color: #444444;
+
+}}
+
+select {{
+
+    padding: 8px 12px;
+
+    border-radius: 8px;
+
+    border: 1px solid #dddddd;
+
+    background: white;
+
+    font-size: 15px;
 
 }}
 
@@ -292,49 +636,117 @@ Press PLAY
 
 <div class="controls">
 
-<button onclick="previousChunk()">◀</button>
+<button onclick="previousChunk()">
 
-<button onclick="togglePlay()" id="playButton">
+◀
+
+</button>
+
+<button
+
+onclick="togglePlay()"
+
+id="playButton"
+
+>
 
 ▶ PLAY
 
 </button>
 
-<button onclick="nextChunk()">▶</button>
+<button onclick="nextChunk()">
+
+▶
+
+</button>
 
 </div>
 
-<div class="controls">
-
-<label>
+<div class="speed-control">
 
 Speed:
 
 <select id="speed">
 
-<option value="300">300 WPM</option>
+<option value="200">
 
-<option value="400">400 WPM</option>
+200 WPM
 
-<option value="500" selected>500 WPM</option>
+</option>
 
-<option value="600">600 WPM</option>
+<option value="300">
 
-<option value="800">800 WPM</option>
+300 WPM
 
-<option value="1000">1000 WPM</option>
+</option>
+
+<option value="400">
+
+400 WPM
+
+</option>
+
+<option value="500"
+
+selected>
+
+500 WPM
+
+</option>
+
+<option value="600">
+
+600 WPM
+
+</option>
+
+<option value="700">
+
+700 WPM
+
+</option>
+
+<option value="800">
+
+800 WPM
+
+</option>
+
+<option value="1000">
+
+1000 WPM
+
+</option>
+
+<option value="1200">
+
+1200 WPM
+
+</option>
 
 </select>
-
-</label>
 
 </div>
 
 <div class="info">
 
-<div id="progress">
+<div id="pageInfo">
 
-0 / {len(formatted_chunks)}
+Page 1 / {total_pages}
+
+</div>
+
+<div id="chunkInfo">
+
+Chunk 1 / {len(formatted_chunks)}
+
+</div>
+
+</div>
+
+<div class="progress-container">
+
+<div id="progressBar">
 
 </div>
 
@@ -344,7 +756,13 @@ Speed:
 
 <script>
 
-const chunks = {chunks_json};
+const chunks =
+
+{chunks_json};
+
+const pageNumbers =
+
+{page_numbers_json};
 
 let current = 0;
 
@@ -354,15 +772,65 @@ let timer = null;
 
 function showChunk() {{
 
-    if (chunks.length === 0) return;
+    if (
 
-    document.getElementById("text").innerHTML =
+        chunks.length === 0
+
+    )
+
+        return;
+
+    document
+
+        .getElementById("text")
+
+        .innerHTML =
 
         chunks[current];
 
-    document.getElementById("progress").innerText =
+    document
 
-        (current + 1) + " / " + chunks.length;
+        .getElementById("pageInfo")
+
+        .innerText =
+
+        "Page "
+
+        + pageNumbers[current]
+
+        + " / {total_pages}";
+
+    document
+
+        .getElementById("chunkInfo")
+
+        .innerText =
+
+        "Chunk "
+
+        + (current + 1)
+
+        + " / "
+
+        + chunks.length;
+
+    const progress =
+
+        ((current + 1)
+
+        / chunks.length)
+
+        * 100;
+
+    document
+
+        .getElementById("progressBar")
+
+        .style
+
+        .width =
+
+        progress + "%";
 
 }}
 
@@ -370,49 +838,101 @@ function getDelay() {{
 
     const wpm =
 
-        Number(document.getElementById("speed").value);
+        Number(
 
-    const words =
+            document
+
+                .getElementById("speed")
+
+                .value
+
+        );
+
+    const plainText =
 
         chunks[current]
 
-        .replace(/<[^>]*>/g, "")
+            .replace(
 
-        .trim()
+                /<[^>]*>/g,
 
-        .split(/\\s+/)
+                ""
 
-        .length;
+            )
 
-    return (words / wpm) * 60000;
+            .trim();
+
+    const wordCount =
+
+        plainText
+
+            .split(/\s+/)
+
+            .length;
+
+    return (
+
+        wordCount
+
+        / wpm
+
+    ) * 60000;
 
 }}
 
 function playNext() {{
 
-    if (!playing) return;
+    if (!playing)
+
+        return;
 
     showChunk();
 
-    timer = setTimeout(() => {{
+    timer =
 
-        if (current < chunks.length - 1) {{
+        setTimeout(
 
-            current++;
+            function() {{
 
-            playNext();
+                if (
 
-        }} else {{
+                    current
 
-            playing = false;
+                    <
 
-            document.getElementById("playButton")
+                    chunks.length - 1
 
-                .innerText = "▶ PLAY";
+                ) {{
 
-        }}
+                    current++;
 
-    }}, getDelay());
+                    playNext();
+
+                }}
+
+                else {{
+
+                    playing = false;
+
+                    document
+
+                        .getElementById(
+
+                            "playButton"
+
+                        )
+
+                        .innerText =
+
+                        "▶ PLAY";
+
+                }}
+
+            }},
+
+            getDelay()
+
+        );
 
 }}
 
@@ -424,17 +944,35 @@ function togglePlay() {{
 
         clearTimeout(timer);
 
-        document.getElementById("playButton")
+        document
 
-            .innerText = "▶ PLAY";
+            .getElementById(
 
-    }} else {{
+                "playButton"
+
+            )
+
+            .innerText =
+
+            "▶ PLAY";
+
+    }}
+
+    else {{
 
         playing = true;
 
-        document.getElementById("playButton")
+        document
 
-            .innerText = "⏸ PAUSE";
+            .getElementById(
+
+                "playButton"
+
+            )
+
+            .innerText =
+
+            "⏸ PAUSE";
 
         playNext();
 
@@ -446,7 +984,15 @@ function nextChunk() {{
 
     clearTimeout(timer);
 
-    if (current < chunks.length - 1)
+    if (
+
+        current
+
+        <
+
+        chunks.length - 1
+
+    )
 
         current++;
 
@@ -470,17 +1016,23 @@ document
 
     .getElementById("speed")
 
-    .addEventListener("change", function() {{
+    .addEventListener(
 
-        if (playing) {{
+        "change",
 
-            clearTimeout(timer);
+        function() {{
 
-            playNext();
+            if (playing) {{
+
+                clearTimeout(timer);
+
+                playNext();
+
+            }}
 
         }}
 
-    }});
+    );
 
 showChunk();
 
@@ -492,12 +1044,12 @@ showChunk();
 
 """
 
-    components.html(
+        components.html(
 
-        reader_html,
+            reader_html,
 
-        height=500,
+            height=560,
 
-        scrolling=False
+            scrolling=False
 
-    )
+        )
